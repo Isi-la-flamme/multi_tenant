@@ -114,7 +114,7 @@ app.use('/api/products', require('./routes/products'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/admin', require('./routes/admin'));
-
+app.use('/api/upload', require('./routes/upload'));
 // ============================================
 // Gestion des erreurs 404
 // ============================================

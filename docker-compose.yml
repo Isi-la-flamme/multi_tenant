@@ -18,7 +18,7 @@ services:
       dockerfile: Dockerfile
     container_name: node-api
     ports:
-      - "3000:3000"  # Pour tester directement sans Nginx
+      - "3000:3000"
     environment:
       - NODE_ENV=development
       - DB_HOST=postgres
@@ -28,8 +28,11 @@ services:
       - DB_NAME=multitenant_db
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=dev-secret-key-change-in-production
+      - UPLOADS_PATH=/app/uploads
+      - MAX_FILE_SIZE=5242880
     volumes:
-      - ./backend/src:/app/src  # Montage du code en développement
+      - ./backend/src:/app/src
+      - uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,6 +79,7 @@ services:
 volumes:
   pgdata:
   redisdata:
+  uploads:
 
 networks:
   app-network:

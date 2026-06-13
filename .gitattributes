@@ -1,0 +1,12 @@
+# Forcer les fins de ligne Unix pour les fichiers de script
+*.sh text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Dockerfile text eol=lf
+
+# Forcer les fins de ligne Windows pour les fichiers batch
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf

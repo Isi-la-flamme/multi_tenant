@@ -1,33 +1,73 @@
--- Schéma public pour la gestion globale
+-- Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
-CREATE TABLE tenants (
+-- ============================================
+-- Tables de gestion globale (schéma public)
+-- ============================================
+
+-- Tenants
+CREATE TABLE IF NOT EXISTS tenants (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     subdomain VARCHAR(100) UNIQUE NOT NULL,
     db_schema VARCHAR(100),
     is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    settings JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE users (
+-- Utilisateurs
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    name VARCHAR(255),
+    is_active BOOLEAN DEFAULT true,
+    last_login TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Un utilisateur peut appartenir à plusieurs tenants
-CREATE TABLE tenant_users (
-    tenant_id UUID REFERENCES tenants(id),
-    user_id UUID REFERENCES users(id),
+-- Liaison utilisateurs <-> tenants
+CREATE TABLE IF NOT EXISTS tenant_users (
+    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     role VARCHAR(50) DEFAULT 'member',
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (tenant_id, user_id)
 );
 
--- Seed un tenant de test
-INSERT INTO tenants (name, subdomain) VALUES 
-    ('Client Demo', 'demo');
+-- ============================================
+-- Données de test (développement)
+-- ============================================
 
--- Créer un schéma par tenant (optionnel, pour isolation forte)
-CREATE SCHEMA IF NOT EXISTS tenant_demo;
+-- Tenants de test
+INSERT INTO tenants (name, subdomain) VALUES 
+    ('Client Démo', 'demo'),
+    ('Client Un', 'client1'),
+    ('Client Deux', 'client2')
+ON CONFLICT (subdomain) DO NOTHING;
+
+-- ============================================
+-- Fonctions utilitaires
+-- ============================================
+
+-- Mettre à jour le timestamp automatiquement
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Triggers
+CREATE TRIGGER update_tenants_updated_at 
+    BEFORE UPDATE ON tenants 
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_users_updated_at 
+    BEFORE UPDATE ON users 
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

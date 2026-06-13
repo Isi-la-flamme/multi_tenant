@@ -111,6 +111,7 @@ app.get('/api/me/tenants', authenticateUser, async (req, res, next) => {
 });
 // Routes produits (protégées par authentification)
 app.use('/api/products', require('./routes/products'));
+app.use('/api/users', require('./routes/users'));
 // ============================================
 // Gestion des erreurs 404
 // ============================================

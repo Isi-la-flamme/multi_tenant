@@ -77,8 +77,11 @@ app.use('/api/tenant', tenantRoutes);
 // ============================================
 // Routes protégées (nécessitent authentification)
 // ============================================
+// Dans index.js, ajouter après les autres routes :
+
 const { authenticateUser } = require('./middleware/auth');
 
+// Route protégée - nécessite authentification
 app.get('/api/me', authenticateUser, (req, res) => {
     res.json({
         status: 'success',
@@ -91,6 +94,20 @@ app.get('/api/me', authenticateUser, (req, res) => {
             }
         }
     });
+});
+
+// Route pour voir les tenants de l'utilisateur connecté
+app.get('/api/me/tenants', authenticateUser, async (req, res, next) => {
+    try {
+        const userService = require('./services/user-service');
+        const tenants = await userService.getUserTenants(req.user.id);
+        res.json({
+            status: 'success',
+            data: { tenants }
+        });
+    } catch (error) {
+        next(error);
+    }
 });
 
 // ============================================

@@ -71,3 +71,35 @@ CREATE TRIGGER update_tenants_updated_at
 CREATE TRIGGER update_users_updated_at 
     BEFORE UPDATE ON users 
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+
+-- Ajouter à la fin du fichier existant
+
+-- Fonction pour créer un utilisateur
+CREATE OR REPLACE FUNCTION create_user(
+    p_email VARCHAR(255),
+    p_password_hash VARCHAR(255),
+    p_name VARCHAR(255)
+) RETURNS users AS $$
+DECLARE
+    v_user users;
+BEGIN
+    INSERT INTO users (email, password_hash, name)
+    VALUES (p_email, p_password_hash, p_name)
+    RETURNING * INTO v_user;
+    
+    RETURN v_user;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Fonction pour trouver un utilisateur par email
+CREATE OR REPLACE FUNCTION find_user_by_email(
+    p_email VARCHAR(255)
+) RETURNS users AS $$
+DECLARE
+    v_user users;
+BEGIN
+    SELECT * INTO v_user FROM users WHERE email = p_email;
+    RETURN v_user;
+END;
+$$ LANGUAGE plpgsql;

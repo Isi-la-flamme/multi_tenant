@@ -1,60 +1,62 @@
 const express = require('express');
 const router = express.Router();
+const userService = require('../services/user-service');
+const { ValidationError } = require('../utils/errors');
+const logger = require('../utils/logger');
 
 // POST /api/auth/register
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res, next) => {
     try {
         const { email, password, name } = req.body;
         
+        // Validation
         if (!email || !password) {
-            return res.status(400).json({ error: 'Email et mot de passe requis' });
+            throw new ValidationError('Email et mot de passe requis');
+        }
+        
+        if (!email.includes('@')) {
+            throw new ValidationError('Email invalide');
         }
         
         if (password.length < 6) {
-            return res.status(400).json({ error: 'Mot de passe trop court (min 6 caractères)' });
+            throw new ValidationError('Le mot de passe doit contenir au moins 6 caractères');
         }
+        
+        const user = await userService.register({ email, password, name });
+        
+        logger.success(`Nouvel utilisateur enregistré: ${email}`);
         
         res.status(201).json({
             status: 'success',
             message: 'Utilisateur créé avec succès',
-            data: {
-                user: {
-                    id: 'user-' + Date.now(),
-                    email,
-                    name: name || email.split('@')[0]
-                }
-            }
+            data: { user }
         });
+        
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 });
 
 // POST /api/auth/login
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res, next) => {
     try {
         const { email, password } = req.body;
         
         if (!email || !password) {
-            return res.status(400).json({ error: 'Email et mot de passe requis' });
+            throw new ValidationError('Email et mot de passe requis');
         }
         
-        const jwt = require('jsonwebtoken');
-        const token = jwt.sign(
-            { userId: 'user-' + Date.now(), email },
-            process.env.JWT_SECRET || 'dev-secret',
-            { expiresIn: '24h' }
-        );
+        const result = await userService.login({ email, password });
+        
+        logger.success(`Connexion réussie: ${email}`);
         
         res.json({
             status: 'success',
-            data: {
-                user: { id: 'user-1', email },
-                token
-            }
+            data: result
         });
+        
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        next(error);
     }
 });
 

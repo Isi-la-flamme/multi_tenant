@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
-const tenantService = require('../services/tenant-service');
 const userService = require('../services/user-service');
+const tenantService = require('../services/tenant-service');
 const { UnauthorizedError, ForbiddenError } = require('../utils/errors');
 const logger = require('../utils/logger');
 
@@ -17,27 +17,32 @@ async function authenticateUser(req, res, next) {
         let decoded;
         
         try {
-            decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret-key');
+            decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret-key-change-me');
         } catch (err) {
-            throw new UnauthorizedError('Token invalide ou expiré');
+            if (err.name === 'TokenExpiredError') {
+                throw new UnauthorizedError('Token expiré, veuillez vous reconnecter');
+            }
+            throw new UnauthorizedError('Token invalide');
         }
         
-        // 3. Récupérer l'utilisateur
+        // 3. Récupérer l'utilisateur depuis la DB
         const user = await userService.findById(decoded.userId);
         if (!user) {
             throw new UnauthorizedError('Utilisateur non trouvé');
         }
         
-        // 4. Vérifier que l'utilisateur appartient au tenant
-        const isMember = await tenantService.isUserInTenant(user.id, req.tenant.id);
-        if (!isMember && process.env.NODE_ENV === 'production') {
-            throw new ForbiddenError('Vous n\'avez pas accès à ce tenant');
+        // 4. En production, vérifier que l'utilisateur appartient au tenant
+        if (process.env.NODE_ENV === 'production') {
+            const isMember = await tenantService.isUserInTenant(user.id, req.tenant.id);
+            if (!isMember) {
+                throw new ForbiddenError('Vous n\'avez pas accès à ce tenant');
+            }
         }
         
         // 5. Attacher l'utilisateur à la requête
         req.user = user;
         
-        logger.debug(`Utilisateur authentifié: ${user.email}`);
+        logger.debug(`Utilisateur authentifié: ${user.email} | Tenant: ${req.tenant.subdomain}`);
         next();
         
     } catch (error) {
@@ -51,7 +56,7 @@ async function optionalAuth(req, res, next) {
         const authHeader = req.headers.authorization;
         if (authHeader && authHeader.startsWith('Bearer ')) {
             const token = authHeader.split(' ')[1];
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret-key');
+            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret-key-change-me');
             req.user = await userService.findById(decoded.userId);
         }
     } catch (err) {

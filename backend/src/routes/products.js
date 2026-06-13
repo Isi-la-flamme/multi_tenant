@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { validate } = require('../middleware/validate');
+const { createProductSchema, updateProductSchema } = require('../validators/product-validator');
 const productService = require('../services/product-service');
 const { authenticateUser } = require('../middleware/auth');
 const { ValidationError } = require('../utils/errors');
@@ -52,21 +54,17 @@ router.get('/:id', async (req, res, next) => {
 });
 
 // POST /api/products - Créer un produit
-router.post('/', async (req, res, next) => {
+router.post('/', validate(createProductSchema), async (req, res, next) => {
     try {
         const product = await productService.create(req.tenant.id, req.body);
-        res.status(201).json({
-            status: 'success',
-            message: 'Produit créé avec succès',
-            data: { product }
-        });
+        res.status(201).json({ status: 'success', data: { product } });
     } catch (error) {
         next(error);
     }
 });
 
 // PUT /api/products/:id - Modifier un produit
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', validate(updateProductSchema), async (req, res, next) => {
     try {
         const product = await productService.update(req.params.id, req.tenant.id, req.body);
         res.json({

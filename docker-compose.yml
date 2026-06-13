@@ -32,6 +32,7 @@ services:
       - MAX_FILE_SIZE=5242880
     volumes:
       - ./backend/src:/app/src
+      - ./backend/tests:/app/tests
       - uploads:/app/uploads
     depends_on:
       postgres:

@@ -14,6 +14,7 @@ const tenantRoutes = require('./routes/tenant');
 const productRoutes = require('./routes/products');
 const userRoutes = require('./routes/users');
 const dashboardRoutes = require('./routes/dashboard');
+const creditClientRoutes = require('./routes/credit-client');
 const adminRoutes = require('./routes/admin');
 const uploadRoutes = require('./routes/upload');
 const walletRoutes = require('./routes/wallet');  // ← À ajouter
@@ -49,7 +50,7 @@ app.use('/api/dashboard', authenticateUser, dashboardRoutes);
 app.use('/api/admin', authenticateUser, adminRoutes);
 app.use('/api/upload', authenticateUser, uploadRoutes);
 app.use('/api/wallet', authenticateUser, walletRoutes);  // ← Ajouter avec authenticateUser
-
+app.use('/api/credit', authenticateUser, creditClientRoutes);  // ← Ajouter avec authenticateUser
 // Route protégée simple
 app.get('/api/me', authenticateUser, (req, res) => {
     res.json({

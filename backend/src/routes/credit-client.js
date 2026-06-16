@@ -4,8 +4,10 @@ const creditClientService = require('../services/credit-client-service');
 const userService = require('../services/user-service');
 const { authenticateUser } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
-const { ForbiddenError, ValidationError } = require('../utils/errors');
+const { ForbiddenError, ValidationError, NotFoundError } = require('../utils/errors');
 const logger = require('../utils/logger');
+const pdfService = require('../services/pdf-service');
+
 
 // ============================================
 // MIDDLEWARE : Vérification admin
@@ -277,6 +279,65 @@ router.get('/admin/summary', authenticateUser, requireAdmin, async (req, res, ne
             status: 'success',
             data: summary
         });
+    } catch (error) {
+        next(error);
+    }
+});
+
+
+// ============================================
+// EXPORT PDF
+// ============================================
+
+// GET /api/credit/admin/invoice-pdf/:invoiceId - Admin exporte en PDF
+router.get('/admin/invoice-pdf/:invoiceId', authenticateUser, requireAdmin, async (req, res, next) => {
+    try {
+        const { invoiceId } = req.params;
+        
+        // Vérifier que la facture existe
+        const invoice = await creditClientService.getInvoice(invoiceId, req.tenant.id);
+        if (!invoice) {
+            throw new NotFoundError('Facture non trouvée');
+        }
+        
+        // Générer le PDF
+        const pdfBuffer = await pdfService.generateInvoice(invoiceId, req.tenant.id);
+        
+        // Envoyer le PDF
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="facture-${invoice.invoice_number}.pdf"`);
+        res.setHeader('Content-Length', pdfBuffer.length);
+        
+        res.send(pdfBuffer);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// GET /api/credit/my-invoice-pdf/:invoiceId - Client exporte sa facture
+router.get('/my-invoice-pdf/:invoiceId', authenticateUser, async (req, res, next) => {
+    try {
+        const { invoiceId } = req.params;
+        
+        // Vérifier que la facture appartient au client
+        const invoice = await creditClientService.getInvoice(invoiceId, req.tenant.id);
+        if (!invoice) {
+            throw new NotFoundError('Facture non trouvée');
+        }
+        
+        if (invoice.user_id !== req.user.id) {
+            throw new ForbiddenError('Cette facture ne vous appartient pas');
+        }
+        
+        // Générer le PDF
+        const pdfBuffer = await pdfService.generateInvoice(invoiceId, req.tenant.id);
+        
+        // Envoyer le PDF
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="facture-${invoice.invoice_number}.pdf"`);
+        res.setHeader('Content-Length', pdfBuffer.length);
+        
+        res.send(pdfBuffer);
     } catch (error) {
         next(error);
     }

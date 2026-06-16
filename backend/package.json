@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "API SaaS Multitenant avec Node.js, PostgreSQL et Redis",
   "main": "src/index.js",
-
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
@@ -21,6 +20,7 @@
   "license": "ISC",
   "dependencies": {
     "bcrypt": "^5.1.1",
+    "buffer": "^6.0.3",
     "compression": "^1.8.1",
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
@@ -30,6 +30,7 @@
     "joi": "^18.2.1",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.1.1",
+    "pdfkit": "^0.19.1",
     "pg": "^8.11.3",
     "redis": "^4.6.12",
     "sharp": "^0.35.1",

@@ -1,19 +1,22 @@
 const { globalPool } = require('../config/database');
-const { cacheGet, cacheSet, cacheDelete } = require('../config/redis');
+const { cacheGet, cacheSet } = require('../config/redis');
 const logger = require('../utils/logger');
 
 class TenantService {
     async findBySubdomain(subdomain) {
-        // Chercher dans le cache d'abord
         const cacheKey = `tenant:${subdomain}`;
-        let tenant = await cacheGet(cacheKey);
+        let tenant = null;
+        
+        try {
+            tenant = await cacheGet(cacheKey);
+        } catch (err) {
+            // Redis non disponible
+        }
         
         if (tenant) {
-            logger.debug(`Tenant "${subdomain}" trouvé dans le cache`);
             return tenant;
         }
         
-        // Sinon chercher en base
         const { rows } = await globalPool.query(
             'SELECT * FROM tenants WHERE subdomain = $1 AND is_active = true',
             [subdomain]
@@ -25,9 +28,11 @@ class TenantService {
         
         tenant = rows[0];
         
-        // Mettre en cache pour 1 heure
-        await cacheSet(cacheKey, tenant, 3600);
-        logger.debug(`Tenant "${subdomain}" mis en cache`);
+        try {
+            await cacheSet(cacheKey, tenant, 3600);
+        } catch (err) {
+            // Redis non disponible
+        }
         
         return tenant;
     }
@@ -54,7 +59,7 @@ class TenantService {
     
     async isUserInTenant(userId, tenantId) {
         const { rows } = await globalPool.query(
-            'SELECT * FROM tenant_users WHERE user_id = $1 AND tenant_id = $2',
+            'SELECT id FROM profiles WHERE user_id = $1 AND tenant_id = $2 AND is_active = true',
             [userId, tenantId]
         );
         return rows.length > 0;
@@ -62,9 +67,9 @@ class TenantService {
     
     async addUserToTenant(userId, tenantId, role = 'member') {
         const { rows } = await globalPool.query(
-            `INSERT INTO tenant_users (user_id, tenant_id, role) 
-             VALUES ($1, $2, $3) 
-             ON CONFLICT (user_id, tenant_id) DO UPDATE SET role = $3
+            `INSERT INTO profiles (user_id, tenant_id, role, is_active) 
+             VALUES ($1, $2, $3, true) 
+             ON CONFLICT (user_id, tenant_id) DO UPDATE SET role = $3, is_active = true
              RETURNING *`,
             [userId, tenantId, role]
         );

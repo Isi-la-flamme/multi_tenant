@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const sharp = require('sharp');
+
 const { globalPool } = require('../config/database');
 const { UPLOADS_ROOT } = require('../config/upload');
 const { NotFoundError, ValidationError } = require('../utils/errors');
@@ -56,6 +58,20 @@ class UploadService {
         return rows;
     }
     
+
+    // Dans backend/src/services/upload-service.js
+
+    async optimizeImage(inputPath, outputPath, options = { width: 1200, quality: 80 }) {
+        await sharp(inputPath)
+            .resize(options.width, null, { withoutEnlargement: true })
+            .jpeg({ quality: options.quality })
+            .toFile(outputPath);
+        // Remplacer le fichier original
+        fs.unlinkSync(inputPath);
+        fs.renameSync(outputPath, inputPath);
+    }
+
+
     // Récupérer un fichier par ID
     async getFileById(fileId, tenantId) {
         const { rows } = await globalPool.query(

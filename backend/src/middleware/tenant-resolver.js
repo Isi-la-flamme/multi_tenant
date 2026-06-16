@@ -5,7 +5,6 @@ const { NotFoundError } = require('../utils/errors');
 
 async function tenantResolver(req, res, next) {
     try {
-        // 1. Déterminer le sous-domaine
         let subdomain = null;
         
         if (req.headers['x-tenant-subdomain']) {
@@ -27,13 +26,11 @@ async function tenantResolver(req, res, next) {
         
         subdomain = subdomain.toLowerCase().replace(/[^a-z0-9-]/g, '');
         
-        // 2. Chercher le tenant
         let tenant = await tenantService.findBySubdomain(subdomain);
         
-        // 3. En développement, créer un tenant virtuel si non trouvé
         if (!tenant) {
             if (process.env.NODE_ENV === 'development') {
-                logger.warn(`Tenant "${subdomain}" non trouvé, création virtuelle`);
+                logger.warn(`⚠️ Tenant "${subdomain}" non trouvé, utilisation virtuelle`);
                 tenant = {
                     id: '00000000-0000-0000-0000-000000000000',
                     name: `Tenant ${subdomain} (dev)`,
@@ -45,13 +42,16 @@ async function tenantResolver(req, res, next) {
             }
         }
         
-        // 4. Attacher le tenant et sa connexion DB
+        // TOUJOURS attacher tenant, même en mode virtuel
         req.tenant = {
-            ...tenant,
+            id: tenant.id,
+            name: tenant.name,
+            subdomain: tenant.subdomain,
+            is_active: tenant.is_active,
             db: getTenantPool(tenant.id, tenant.db_schema)
         };
         
-        logger.tenant(subdomain, `Résolu: ${tenant.name}`);
+        logger.tenant(subdomain, `✅ Tenant résolu: ${tenant.name}`);
         next();
         
     } catch (error) {

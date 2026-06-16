@@ -3,15 +3,18 @@ const router = express.Router();
 const { upload } = require('../config/upload');
 const uploadService = require('../services/upload-service');
 const { authenticateUser } = require('../middleware/auth');
+const { validate } = require('../middleware/validate');
+const { uploadMetadataSchema } = require('../validators/upload-validator');
 const path = require('path');
 const fs = require('fs');
 
 // Toutes les routes nécessitent authentification
 router.use(authenticateUser);
 
-// POST /api/upload - Upload simple
-router.post('/', (req, res, next) => {
-    req.uploadType = 'all';
+// POST /api/upload - Upload simple AVEC validation des métadonnées
+router.post('/', validate(uploadMetadataSchema), (req, res, next) => {
+    // Le validateur a déjà nettoyé et validé req.body
+    req.uploadType = req.body.entityType;
     
     upload.single('file')(req, res, async (err) => {
         if (err) {
@@ -27,7 +30,7 @@ router.post('/', (req, res, next) => {
                 req.tenant.id,
                 req.user.id,
                 req.file,
-                req.body.entityType || 'general',
+                req.body.entityType,
                 req.body.entityId || null
             );
             
@@ -42,7 +45,7 @@ router.post('/', (req, res, next) => {
     });
 });
 
-// POST /api/upload/avatar - Upload avatar utilisateur
+// POST /api/upload/avatar - Upload avatar utilisateur (pas besoin de validation body)
 router.post('/avatar', (req, res, next) => {
     req.uploadType = 'avatar';
     
@@ -65,6 +68,7 @@ router.post('/avatar', (req, res, next) => {
             );
             
             // Mettre à jour le profil utilisateur avec l'URL de l'avatar
+            const { globalPool } = require('../config/database');
             const avatarUrl = `/api/upload/file/${file.id}`;
             await globalPool.query(
                 'UPDATE profiles SET avatar_url = $1 WHERE user_id = $2 AND tenant_id = $3',
@@ -163,8 +167,5 @@ router.delete('/:fileId', async (req, res, next) => {
         next(error);
     }
 });
-
-// Import pour la route avatar
-const { globalPool } = require('../config/database');
 
 module.exports = router;

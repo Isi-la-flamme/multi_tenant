@@ -1,5 +1,6 @@
+const { generateToken, generateRefreshToken } = require('../config/jwt');
 const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { globalPool } = require('../config/database');
 const logger = require('../utils/logger');
 const { ValidationError, UnauthorizedError, NotFoundError, ForbiddenError } = require('../utils/errors');
@@ -34,25 +35,37 @@ class UserService {
         
         const user = rows[0];
         
-        // Ajouter au tenant spécifié
-        try {
-            const tenantResult = await globalPool.query(
-                'SELECT id FROM tenants WHERE subdomain = $1',
-                [tenantSubdomain]
+        // Trouver ou créer le tenant
+        let tenantResult = await globalPool.query(
+            'SELECT id FROM tenants WHERE subdomain = $1',
+            [tenantSubdomain]
+        );
+        
+        let tenantId;
+        if (tenantResult.rows.length > 0) {
+            tenantId = tenantResult.rows[0].id;
+        } else if (tenantSubdomain === 'demo') {
+            // Créer le tenant par défaut
+            const newTenant = await globalPool.query(
+                `INSERT INTO tenants (name, subdomain, is_active) 
+                 VALUES ('Client Démo', 'demo', true)
+                 RETURNING id`,
+                []
             );
-            if (tenantResult.rows.length > 0) {
-                await globalPool.query(
-                    `INSERT INTO profiles (user_id, tenant_id, role) 
-                     VALUES ($1, $2, 'member')
-                     ON CONFLICT DO NOTHING`,
-                    [user.id, tenantResult.rows[0].id]
-                );
-            }
-        } catch (err) {
-            logger.warn('Impossible d\'ajouter au tenant:', err.message);
+            tenantId = newTenant.rows[0].id;
+        } else {
+            throw new ValidationError(`Tenant "${tenantSubdomain}" n'existe pas`);
         }
         
-        logger.success(`Nouvel utilisateur créé: ${email}`);
+        // Créer le profil dans la table profiles
+        await globalPool.query(
+            `INSERT INTO profiles (user_id, tenant_id, role, is_active) 
+             VALUES ($1, $2, 'member', true)
+             ON CONFLICT (user_id, tenant_id) DO NOTHING`,
+            [user.id, tenantId]
+        );
+        
+        logger.success(`Nouvel utilisateur créé: ${email} dans tenant ${tenantSubdomain}`);
         return user;
     }
     
@@ -81,8 +94,12 @@ class UserService {
             [user.id]
         );
         
-        const token = this.generateToken(user);
+        const accessToken = this.generateAccessToken(user);
+        const refreshToken = this.generateRefreshTokenForUser(user);
         const tenants = await this.getUserTenants(user.id);
+        
+        // Stocker le refresh token
+        await this.storeRefreshToken(user.id, refreshToken);
         
         logger.success(`Utilisateur connecté: ${email}`);
         
@@ -93,27 +110,96 @@ class UserService {
                 name: user.name
             },
             tenants,
-            token
+            accessToken,
+            refreshToken
         };
+    }
+    
+    // ============================================
+    // REFRESH TOKEN
+    // ============================================
+    async storeRefreshToken(userId, token) {
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+        
+        // Révoquer les anciens tokens
+        await globalPool.query(
+            `UPDATE refresh_tokens SET revoked = true 
+             WHERE user_id = $1 AND revoked = false`,
+            [userId]
+        );
+        
+        // Insérer le nouveau token
+        await globalPool.query(
+            `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, revoked) 
+             VALUES ($1, $2, $3, false)`,
+            [userId, tokenHash, expiresAt]
+        );
+    }
+    
+    async verifyRefreshToken(token) {
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+        
+        const { rows } = await globalPool.query(
+            `SELECT * FROM refresh_tokens 
+             WHERE token_hash = $1 AND revoked = false AND expires_at > NOW()`,
+            [tokenHash]
+        );
+        
+        if (rows.length === 0) {
+            throw new UnauthorizedError('Refresh token invalide ou expiré');
+        }
+        
+        return rows[0];
+    }
+    
+    async revokeRefreshToken(token) {
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+        
+        await globalPool.query(
+            `UPDATE refresh_tokens SET revoked = true WHERE token_hash = $1`,
+            [tokenHash]
+        );
+    }
+    
+    async revokeAllUserRefreshTokens(userId) {
+        await globalPool.query(
+            `UPDATE refresh_tokens SET revoked = true WHERE user_id = $1`,
+            [userId]
+        );
+    }
+    
+    async refreshAccessToken(refreshToken) {
+        const tokenRecord = await this.verifyRefreshToken(refreshToken);
+        const user = await this.findById(tokenRecord.user_id);
+        
+        if (!user || !user.is_active) {
+            throw new UnauthorizedError('Utilisateur non trouvé ou désactivé');
+        }
+        
+        const newAccessToken = this.generateAccessToken(user);
+        
+        return { accessToken: newAccessToken };
     }
     
     // ============================================
     // JWT
     // ============================================
-    generateToken(user) {
-        return jwt.sign(
-            { userId: user.id, email: user.email },
-            process.env.JWT_SECRET || 'dev-secret-key-change-me',
-            { expiresIn: process.env.JWT_EXPIRATION || '24h' }
-        );
+    generateAccessToken(user) {
+        return generateToken({ userId: user.id, email: user.email });
+    }
+
+    generateRefreshTokenForUser(user) {
+        return generateRefreshToken({ userId: user.id, email: user.email, type: 'refresh' });
     }
     
     // ============================================
-    // TENANTS DE L'UTILISATEUR
+    // TENANTS DE L'UTILISATEUR (via profiles)
     // ============================================
     async getUserTenants(userId) {
         const { rows } = await globalPool.query(
-            `SELECT t.id, t.name, t.subdomain, p.role 
+            `SELECT t.id, t.name, t.subdomain, p.role, p.is_active
              FROM tenants t
              JOIN profiles p ON t.id = p.tenant_id
              WHERE p.user_id = $1 AND t.is_active = true AND p.is_active = true`,
@@ -123,10 +209,9 @@ class UserService {
     }
     
     // ============================================
-    // PROFILS (CRUD par tenant)
+    // PROFILS (CRUD via profiles)
     // ============================================
     
-    // Lister les utilisateurs d'un tenant
     async findAllByTenant(tenantId, filters = {}) {
         let query = `
             SELECT u.id, u.email, u.name, p.role, p.phone, p.avatar_url, p.is_active, p.created_at
@@ -162,13 +247,12 @@ class UserService {
         return rows;
     }
     
-    // Voir un profil utilisateur dans un tenant
     async findProfileByTenant(userId, tenantId) {
         const { rows } = await globalPool.query(
             `SELECT u.id, u.email, u.name, p.role, p.phone, p.avatar_url, p.metadata, p.is_active, p.created_at, p.updated_at
              FROM users u
              JOIN profiles p ON u.id = p.user_id
-             WHERE u.id = $1 AND p.tenant_id = $2`,
+             WHERE u.id = $1 AND p.tenant_id = $2 AND p.is_active = true`,
             [userId, tenantId]
         );
         
@@ -179,9 +263,8 @@ class UserService {
         return rows[0];
     }
     
-    // Ajouter un utilisateur existant à un tenant
     async addUserToTenant(email, tenantId, role = 'member') {
-        // Trouver l'utilisateur par email
+        // Trouver l'utilisateur
         const userResult = await globalPool.query(
             'SELECT id, email, name FROM users WHERE email = $1',
             [email]
@@ -193,34 +276,34 @@ class UserService {
         
         const user = userResult.rows[0];
         
-        // Vérifier s'il est déjà dans le tenant
+        // Vérifier s'il existe déjà
         const existingProfile = await globalPool.query(
             'SELECT id FROM profiles WHERE user_id = $1 AND tenant_id = $2',
             [user.id, tenantId]
         );
         
         if (existingProfile.rows.length > 0) {
-            throw new ValidationError('Cet utilisateur est déjà dans ce tenant');
+            // Réactiver si désactivé
+            await globalPool.query(
+                `UPDATE profiles SET is_active = true, role = $1 
+                 WHERE user_id = $2 AND tenant_id = $3`,
+                [role, user.id, tenantId]
+            );
+        } else {
+            // Créer le profil
+            await globalPool.query(
+                `INSERT INTO profiles (user_id, tenant_id, role, is_active) 
+                 VALUES ($1, $2, $3, true)`,
+                [user.id, tenantId, role]
+            );
         }
         
-        // Ajouter le profil
-        const { rows } = await globalPool.query(
-            `INSERT INTO profiles (user_id, tenant_id, role) 
-             VALUES ($1, $2, $3) 
-             RETURNING *`,
-            [user.id, tenantId, role]
-        );
-        
         logger.tenant(tenantId, `Utilisateur ajouté: ${email} comme ${role}`);
-        return {
-            user: { id: user.id, email: user.email, name: user.name },
-            profile: rows[0]
-        };
+        return { user: { id: user.id, email: user.email, name: user.name } };
     }
     
-    // Mettre à jour le rôle d'un utilisateur dans un tenant
     async updateProfile(userId, tenantId, data) {
-        const profile = await this.findProfileByTenant(userId, tenantId);
+        await this.findProfileByTenant(userId, tenantId);
         
         const { role, phone, avatarUrl, metadata, isActive } = data;
         
@@ -239,13 +322,12 @@ class UserService {
              isActive ?? null, userId, tenantId]
         );
         
-        logger.tenant(tenantId, `Profil mis à jour: ${profile.email}`);
+        logger.tenant(tenantId, `Profil mis à jour pour utilisateur ${userId}`);
         return rows[0];
     }
     
-    // Désactiver un utilisateur d'un tenant
     async removeUserFromTenant(userId, tenantId) {
-        const profile = await this.findProfileByTenant(userId, tenantId);
+        await this.findProfileByTenant(userId, tenantId);
         
         await globalPool.query(
             `UPDATE profiles SET is_active = false, updated_at = CURRENT_TIMESTAMP 
@@ -253,11 +335,10 @@ class UserService {
             [userId, tenantId]
         );
         
-        logger.tenant(tenantId, `Utilisateur désactivé: ${profile.email}`);
+        logger.tenant(tenantId, `Utilisateur ${userId} désactivé du tenant`);
         return { message: 'Utilisateur retiré du tenant avec succès' };
     }
     
-    // Réactiver un utilisateur
     async reactivateUser(userId, tenantId) {
         await globalPool.query(
             `UPDATE profiles SET is_active = true, updated_at = CURRENT_TIMESTAMP 
@@ -274,7 +355,7 @@ class UserService {
     
     async findById(userId) {
         const { rows } = await globalPool.query(
-            'SELECT id, email, name, created_at, last_login FROM users WHERE id = $1',
+            'SELECT id, email, name, created_at, last_login, is_active FROM users WHERE id = $1',
             [userId]
         );
         return rows[0] || null;
@@ -283,8 +364,7 @@ class UserService {
     async countByTenant(tenantId, filters = {}) {
         let query = `
             SELECT COUNT(*) 
-            FROM users u
-            JOIN profiles p ON u.id = p.user_id
+            FROM profiles p
             WHERE p.tenant_id = $1
         `;
         const params = [tenantId];
@@ -301,6 +381,15 @@ class UserService {
         
         const { rows } = await globalPool.query(query, params);
         return parseInt(rows[0].count);
+    }
+    
+    async isUserInTenant(userId, tenantId) {
+        const { rows } = await globalPool.query(
+            `SELECT id FROM profiles 
+             WHERE user_id = $1 AND tenant_id = $2 AND is_active = true`,
+            [userId, tenantId]
+        );
+        return rows.length > 0;
     }
 }
 

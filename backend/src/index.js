@@ -5,209 +5,95 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { tenantResolver } = require('./middleware/tenant-resolver');
+const { authenticateUser } = require('./middleware/auth');
 const logger = require('./utils/logger');
-const { AppError } = require('./utils/errors');
 
 // Routes
 const authRoutes = require('./routes/auth');
 const tenantRoutes = require('./routes/tenant');
+const productRoutes = require('./routes/products');
+const userRoutes = require('./routes/users');
+const dashboardRoutes = require('./routes/dashboard');
+const adminRoutes = require('./routes/admin');
+const uploadRoutes = require('./routes/upload');
+const walletRoutes = require('./routes/wallet');  // ← À ajouter
 
 const app = express();
 
-// ============================================
 // Middlewares globaux
-// ============================================
-
-// Sécurité HTTP headers
 app.use(helmet());
-
-// CORS
-app.use(cors({
-    origin: process.env.CORS_ORIGIN || '*',
-    credentials: true
-}));
-
-// Rate limiting global
-const globalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100,
-    message: { status: 'fail', message: 'Trop de requêtes, réessayez plus tard' },
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-app.use(globalLimiter);
-
-// Body parser
+app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-// Logger simple pour toutes les requêtes
-app.use((req, res, next) => {
-    logger.info(`${req.method} ${req.url}`);
-    next();
-});
-
-// ============================================
-// Résolution du tenant
-// ============================================
+// ⚠️ CRITICAL: tenantResolver DOIT être AVANT toutes les routes
 app.use(tenantResolver);
 
-// ============================================
 // Routes publiques
-// ============================================
 app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
         tenant: req.tenant?.subdomain || 'unknown',
-        timestamp: new Date().toISOString(),
-        service: 'multitenant-api',
-        version: '1.0.0',
-        uptime: process.uptime()
+        timestamp: new Date().toISOString()
     });
 });
 
-// Routes d'authentification
+// Routes d'auth (publiques)
 app.use('/api/auth', authRoutes);
-
-// ============================================
-// Routes semi-publiques (info tenant)
-// ============================================
 app.use('/api/tenant', tenantRoutes);
 
-// ============================================
 // Routes protégées (nécessitent authentification)
-// ============================================
-// Dans index.js, ajouter après les autres routes :
+app.use('/api/products', authenticateUser, productRoutes);
+app.use('/api/users', authenticateUser, userRoutes);
+app.use('/api/dashboard', authenticateUser, dashboardRoutes);
+app.use('/api/admin', authenticateUser, adminRoutes);
+app.use('/api/upload', authenticateUser, uploadRoutes);
+app.use('/api/wallet', authenticateUser, walletRoutes);  // ← Ajouter avec authenticateUser
 
-const { authenticateUser } = require('./middleware/auth');
-
-// Route protégée - nécessite authentification
+// Route protégée simple
 app.get('/api/me', authenticateUser, (req, res) => {
     res.json({
         status: 'success',
         data: {
             user: req.user,
-            tenant: {
-                id: req.tenant.id,
-                name: req.tenant.name,
-                subdomain: req.tenant.subdomain
-            }
+            tenant: { id: req.tenant.id, name: req.tenant.name, subdomain: req.tenant.subdomain }
         }
     });
 });
 
-// Route pour voir les tenants de l'utilisateur connecté
-app.get('/api/me/tenants', authenticateUser, async (req, res, next) => {
-    try {
-        const userService = require('./services/user-service');
-        const tenants = await userService.getUserTenants(req.user.id);
-        res.json({
-            status: 'success',
-            data: { tenants }
-        });
-    } catch (error) {
-        next(error);
-    }
-});
-// Routes produits (protégées par authentification)
-app.use('/api/products', require('./routes/products'));
-app.use('/api/users', require('./routes/users'));
-app.use('/api/dashboard', require('./routes/dashboard'));
-app.use('/api/admin', require('./routes/admin'));
-app.use('/api/upload', require('./routes/upload'));
-// ============================================
-// Gestion des erreurs 404
-// ============================================
+// 404
 app.all('*', (req, res) => {
-    res.status(404).json({
-        status: 'fail',
-        message: `Route ${req.originalUrl} non trouvée sur ce serveur`
-    });
+    res.status(404).json({ status: 'fail', message: `Route ${req.originalUrl} non trouvée` });
 });
 
-// ============================================
-// Gestion globale des erreurs
-// ============================================
+// Gestion des erreurs
 app.use((err, req, res, next) => {
     logger.error(`${err.statusCode || 500} - ${err.message}`);
     
     if (err.isOperational) {
-        return res.status(err.statusCode).json({
-            status: err.status,
-            message: err.message
-        });
+        return res.status(err.statusCode).json({ status: err.status, message: err.message });
     }
     
-    // Erreur de programmation
-    if (process.env.NODE_ENV === 'development') {
-        console.error('💥 ERREUR:', err);
-        return res.status(500).json({
-            status: 'error',
-            message: err.message,
-            stack: err.stack
-        });
-    }
-    
-    // Erreur en production (ne pas fuiter les détails)
-    res.status(500).json({
-        status: 'error',
-        message: 'Erreur interne du serveur'
-    });
+    res.status(500).json({ status: 'error', message: 'Erreur interne du serveur' });
 });
 
-// ============================================
-// Démarrage du serveur
-// ============================================
 const PORT = process.env.PORT || 3000;
-
 const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log('');
-    logger.success(`🚀 API démarrée sur le port ${PORT}`);
-    logger.info(`📍 Health check: http://localhost:${PORT}/api/health`);
-    logger.info(`📍 Environnement: ${process.env.NODE_ENV || 'development'}`);
-    console.log('');
+    console.log(`🚀 API démarrée sur le port ${PORT}`);
 });
 
-// ============================================
-// Arrêt gracieux
-// ============================================
-async function gracefulShutdown(signal) {
-    logger.warn(`Signal ${signal} reçu, arrêt gracieux...`);
-    
-    server.close(async () => {
-        logger.info('Serveur HTTP fermé');
-        
-        try {
-            const { closeAllPools } = require('./config/database');
-            await closeAllPools();
-            logger.info('Connexions DB fermées');
-        } catch (err) {
-            logger.error('Erreur fermeture DB:', err.message);
-        }
-        
-        process.exit(0);
-    });
-    
-    // Force exit après 10 secondes
-    setTimeout(() => {
-        logger.error('Arrêt forcé après timeout');
-        process.exit(1);
-    }, 10000);
-}
-
+// Arrêt gracieux...
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-// Gestion des erreurs non catchées
-process.on('unhandledRejection', (reason) => {
-    logger.error('Unhandled Rejection:', reason.message);
-    console.error(reason);
-});
-
-process.on('uncaughtException', (error) => {
-    logger.error('Uncaught Exception:', error.message);
-    console.error(error);
-    process.exit(1);
-});
+async function gracefulShutdown(signal) {
+    logger.warn(`Signal ${signal} reçu, arrêt gracieux...`);
+    server.close(async () => {
+        const { closeAllPools } = require('./config/database');
+        await closeAllPools();
+        process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 10000);
+}
 
 module.exports = app;

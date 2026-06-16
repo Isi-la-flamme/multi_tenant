@@ -1,4 +1,4 @@
-const jwt = require('jsonwebtoken');
+const { verifyToken } = require('../config/jwt');
 const userService = require('../services/user-service');
 const tenantService = require('../services/tenant-service');
 const { UnauthorizedError, ForbiddenError } = require('../utils/errors');
@@ -6,43 +6,49 @@ const logger = require('../utils/logger');
 
 async function authenticateUser(req, res, next) {
     try {
-        // 1. Vérifier le header Authorization
+        // 1. Vérifier que le tenant est résolu
+        if (!req.tenant || !req.tenant.id) {
+            throw new UnauthorizedError('Tenant non résolu');
+        }
+        
+        // 2. Vérifier le header Authorization
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             throw new UnauthorizedError('Token d\'authentification manquant');
         }
         
-        // 2. Vérifier le token JWT
         const token = authHeader.split(' ')[1];
-        let decoded;
         
+        // 3. Vérifier le token JWT
+        let decoded;
         try {
-            decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret-key-change-me');
+            decoded = verifyToken(token);
         } catch (err) {
             if (err.name === 'TokenExpiredError') {
-                throw new UnauthorizedError('Token expiré, veuillez vous reconnecter');
+                throw new UnauthorizedError('Token expiré');
             }
-            throw new UnauthorizedError('Token invalide');
+            if (err.name === 'JsonWebTokenError') {
+                throw new UnauthorizedError('Token invalide');
+            }
+            throw new UnauthorizedError('Erreur d\'authentification');
         }
         
-        // 3. Récupérer l'utilisateur depuis la DB
+        // 4. Récupérer l'utilisateur
         const user = await userService.findById(decoded.userId);
-        if (!user) {
-            throw new UnauthorizedError('Utilisateur non trouvé');
+        if (!user || !user.is_active) {
+            throw new UnauthorizedError('Utilisateur non trouvé ou désactivé');
         }
         
-        // 4. En production, vérifier que l'utilisateur appartient au tenant
-        if (process.env.NODE_ENV === 'production') {
-            const isMember = await tenantService.isUserInTenant(user.id, req.tenant.id);
-            if (!isMember) {
-                throw new ForbiddenError('Vous n\'avez pas accès à ce tenant');
-            }
+        // 5. Vérifier l'appartenance au tenant
+        const isMember = await tenantService.isUserInTenant(user.id, req.tenant.id);
+        if (!isMember) {
+            throw new ForbiddenError('Vous n\'avez pas accès à ce tenant');
         }
         
-        // 5. Attacher l'utilisateur à la requête
+        // 6. Attacher l'utilisateur
         req.user = user;
         
-        logger.debug(`Utilisateur authentifié: ${user.email} | Tenant: ${req.tenant.subdomain}`);
+        logger.debug(`✅ Utilisateur authentifié: ${user.email} | Tenant: ${req.tenant.subdomain}`);
         next();
         
     } catch (error) {
@@ -50,17 +56,20 @@ async function authenticateUser(req, res, next) {
     }
 }
 
-// Middleware optionnel (n'échoue pas si pas de token)
 async function optionalAuth(req, res, next) {
     try {
+        if (!req.tenant) {
+            return next();
+        }
+        
         const authHeader = req.headers.authorization;
         if (authHeader && authHeader.startsWith('Bearer ')) {
             const token = authHeader.split(' ')[1];
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret-key-change-me');
+            const decoded = verifyToken(token);
             req.user = await userService.findById(decoded.userId);
         }
     } catch (err) {
-        // Pas d'erreur, l'utilisateur reste non authentifié
+        // Ignorer
     }
     next();
 }

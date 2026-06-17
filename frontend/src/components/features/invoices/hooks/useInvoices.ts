@@ -1,3 +1,4 @@
+// src/components/features/invoices/hooks/useInvoices.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoiceService } from '@/lib/api/services';
 import { CreateInvoiceDTO } from '@/types/invoice.types';
@@ -71,7 +72,9 @@ export const useGeneratePDF = () => {
   return useMutation({
     mutationFn: (id: string) => invoiceService.generatePDF(id),
     onSuccess: (data) => {
-      window.open(data.url, '_blank');
+      if (data?.url) {
+        window.open(data.url, '_blank');
+      }
       toast.success('PDF généré avec succès');
     },
     onError: (error: any) => {
@@ -92,6 +95,22 @@ export const useMarkInvoiceAsPaid = () => {
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.message || 'Erreur lors du marquage');
+    },
+  });
+};
+
+export const useCancelInvoice = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (id: string) => invoiceService.cancel(id),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['invoice', data.id] });
+      toast.success(`Facture ${data.invoiceNumber} annulée`);
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'Erreur lors de l\'annulation');
     },
   });
 };

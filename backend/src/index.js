@@ -69,13 +69,30 @@ app.all('*', (req, res) => {
 
 // Gestion des erreurs
 app.use((err, req, res, next) => {
+    console.error('🚨 Error handler caught:', {
+        message: err.message,
+        statusCode: err.statusCode,
+        isOperational: err.isOperational,
+        stack: err.stack?.split('\n')[0]
+    });
+    
     logger.error(`${err.statusCode || 500} - ${err.message}`);
     
+    // Set content-type explicitly
+    res.setHeader('Content-Type', 'application/json');
+    
     if (err.isOperational) {
-        return res.status(err.statusCode).json({ status: err.status, message: err.message });
+        return res.status(err.statusCode).json({ 
+            status: err.status, 
+            message: err.message 
+        });
     }
     
-    res.status(500).json({ status: 'error', message: 'Erreur interne du serveur' });
+    res.status(500).json({ 
+        status: 'error', 
+        message: 'Erreur interne du serveur',
+        details: err.message
+    });
 });
 
 const PORT = process.env.PORT || 3000;

@@ -9,7 +9,7 @@ function validate(schema, property = 'body') {
         
         if (error) {
             const message = error.details.map(d => d.message).join(', ');
-            throw new ValidationError(message);
+            return next(new ValidationError(message));
         }
         
         req[property] = value;

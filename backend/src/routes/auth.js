@@ -24,6 +24,7 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
 // POST /api/auth/login
 router.post('/login', validate(loginSchema), async (req, res, next) => {
     try {
+        console.log('🔐 Login attempt:', req.body.email);
         const result = await userService.login(req.body);
         logger.success(`Connexion réussie: ${req.body.email}`);
         res.json({
@@ -31,6 +32,7 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
             data: result
         });
     } catch (error) {
+        console.error('❌ Login error:', error);
         next(error);
     }
 });

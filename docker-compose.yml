@@ -102,7 +102,7 @@ services:
       - "3001:3000"
     environment:
       - NODE_ENV=development
-      - NEXT_PUBLIC_API_URL=http://localhost:3000/api
+      - NEXT_PUBLIC_API_URL=http://backend:3000/api
       - NEXTAUTH_URL=http://localhost:3001
       - NEXTAUTH_SECRET=super_secret_nextauth_key_change_me
     volumes:
@@ -115,10 +115,18 @@ services:
       - app-network
     restart: unless-stopped
 
+# ============================================
+# Volumes - Persistant Storage
+# ============================================
+
 volumes:
   pgdata:
   redisdata:
   uploads:
+
+# ============================================
+# Networks - Isolated Network
+# ============================================
 
 networks:
   app-network:

@@ -1,4 +1,7 @@
 services:
+  # ============================================
+  # Nginx - Proxy HTTP
+  # ============================================
   nginx:
     image: nginx:alpine
     container_name: nginx-proxy
@@ -12,6 +15,49 @@ services:
       - app-network
     restart: unless-stopped
 
+  # ============================================
+  # PostgreSQL - Base de données
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: multitenant_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d multitenant_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Redis - Cache
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis-cache
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Backend - Node.js API
+  # ============================================
   backend:
     build: 
       context: ./backend
@@ -21,6 +67,7 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=development
+      - PORT=3000
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=admin
@@ -43,39 +90,30 @@ services:
       - app-network
     restart: unless-stopped
 
-  postgres:
-    image: postgres:16-alpine
-    container_name: postgres-db
+  # ============================================
+  # Frontend - Next.js App ✅ NOUVEAU
+  # ============================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: next-app
+    ports:
+      - "3001:3000"
     environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: secret
-      POSTGRES_DB: multitenant_db
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:3000/api
+      - NEXTAUTH_URL=http://localhost:3001
+      - NEXTAUTH_SECRET=super_secret_nextauth_key_change_me
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
     networks:
       - app-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d multitenant_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    container_name: redis-cache
-    command: redis-server --appendonly yes
-    volumes:
-      - redisdata:/data
-    networks:
-      - app-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
 volumes:
   pgdata:

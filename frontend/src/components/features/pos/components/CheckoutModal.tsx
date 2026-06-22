@@ -24,7 +24,7 @@ import { POSCart, POSPayment } from '@/types/pos.types';
 interface CheckoutModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  cart: POSCart;
+  cart: POSCart | null;  // ✅ Permettre null
   onConfirm: (payment: POSPayment) => void;
   isLoading?: boolean;
 }
@@ -37,15 +37,19 @@ export function CheckoutModal({
   isLoading,
 }: CheckoutModalProps) {
   const [method, setMethod] = useState<'cash' | 'card' | 'credit'>('cash');
-  const [amount, setAmount] = useState(cart.total);
-  const [cashReceived, setCashReceived] = useState(cart.total);
+  const [cashReceived, setCashReceived] = useState(0);
+
+  // ✅ Vérifier que cart existe
+  if (!cart) {
+    return null;
+  }
 
   const handleConfirm = () => {
     const payment: POSPayment = {
       method,
       amount: cart.total,
       cashAmount: method === 'cash' ? cashReceived : undefined,
-      change: method === 'cash' ? cashReceived - cart.total : undefined,
+      change: method === 'cash' && cashReceived >= cart.total ? cashReceived - cart.total : 0,
     };
     onConfirm(payment);
   };
@@ -84,6 +88,7 @@ export function CheckoutModal({
               <Input
                 type="number"
                 step="0.01"
+                placeholder="Montant reçu"
                 value={cashReceived}
                 onChange={(e) => setCashReceived(parseFloat(e.target.value) || 0)}
               />
@@ -92,7 +97,7 @@ export function CheckoutModal({
                   Rendu : {(cashReceived - cart.total).toFixed(2)} €
                 </p>
               )}
-              {cashReceived < cart.total && (
+              {cashReceived > 0 && cashReceived < cart.total && (
                 <p className="mt-1 text-sm text-red-600">
                   Montant insuffisant
                 </p>

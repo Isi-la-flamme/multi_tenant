@@ -45,7 +45,19 @@ export default function POSPage() {
 
   // Handlers
   const handleAddToCart = (product: any) => {
-    if (!cartId) return;
+    if (!cartId) {
+      createCart.mutate(undefined, {
+        onSuccess: (data) => {
+          setCartId(data.id);
+          addToCart.mutate({
+            cartId: data.id,
+            productId: product.id,
+            quantity: 1,
+          });
+        },
+      });
+      return;
+    }
     addToCart.mutate({
       cartId,
       productId: product.id,
@@ -118,7 +130,11 @@ export default function POSPage() {
             onUpdateQuantity={handleUpdateQuantity}
             onRemoveItem={handleRemoveItem}
             onClear={handleClearCart}
-            onCheckout={() => setIsCheckoutOpen(true)}
+            onCheckout={() => {
+              if (cart && cart.items.length > 0) {
+                setIsCheckoutOpen(true);
+              }
+            }}
             isLoading={checkout.isPending}
           />
         </div>
@@ -128,7 +144,7 @@ export default function POSPage() {
       <CheckoutModal
         open={isCheckoutOpen}
         onOpenChange={setIsCheckoutOpen}
-        cart={cart!}
+        cart={cart || null}
         onConfirm={handleCheckout}
         isLoading={checkout.isPending}
       />

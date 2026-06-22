@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Trash2, Plus, Minus, ShoppingCart } from 'lucide-react';
 
 interface CartProps {
-  cart: POSCart;
+  cart: POSCart | null;
   onUpdateQuantity: (itemId: string, quantity: number) => void;
   onRemoveItem: (itemId: string) => void;
   onClear: () => void;
@@ -23,11 +23,14 @@ export function Cart({
   onCheckout,
   isLoading,
 }: CartProps) {
-  if (!cart || cart.items.length === 0) {
+  // Vérifier que le panier existe et a des items
+  const hasItems = cart && cart.items && cart.items.length > 0;
+
+  if (!cart || !hasItems) {
     return (
-      <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
+      <div className="flex h-full flex-col items-center justify-center text-muted-foreground p-4">
         <ShoppingCart className="h-16 w-16 mb-4" />
-        <p>Panier vide</p>
+        <p className="text-lg font-medium">Panier vide</p>
         <p className="text-sm">Ajoutez des produits</p>
       </div>
     );
@@ -104,11 +107,20 @@ export function Cart({
         </div>
 
         <div className="flex gap-2 pt-4">
-          <Button variant="outline" className="flex-1" onClick={onClear}>
+          <Button 
+            variant="outline" 
+            className="flex-1" 
+            onClick={onClear}
+            disabled={isLoading}
+          >
             Annuler
           </Button>
-          <Button className="flex-1" onClick={onCheckout} disabled={isLoading}>
-            {isLoading ? 'Paiement...' : '💳 Payer'}
+          <Button 
+            className="flex-1" 
+            onClick={onCheckout} 
+            disabled={isLoading || !hasItems}
+          >
+            {isLoading ? 'Traitement...' : '💳 Payer'}
           </Button>
         </div>
       </div>

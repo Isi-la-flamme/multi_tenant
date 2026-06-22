@@ -14,10 +14,12 @@ import {
   Wallet,
   User,
   LogOut,
+  Store
 } from 'lucide-react';
 
 const navItems = [
   { name: 'Tableau de bord', href: '/dashboard/overview', icon: LayoutDashboard },
+  { name: 'Point de vente', href: '/dashboard/pos', icon: Store },
   { name: 'Produits', href: '/dashboard/products', icon: Package },
   { name: 'Crédits', href: '/dashboard/credits', icon: CreditCard },
   { name: 'Factures', href: '/dashboard/invoices', icon: FileText },

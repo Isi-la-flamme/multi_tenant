@@ -17,20 +17,93 @@ const dashboardRoutes = require('./routes/dashboard');
 const creditClientRoutes = require('./routes/credit-client');
 const adminRoutes = require('./routes/admin');
 const uploadRoutes = require('./routes/upload');
-const walletRoutes = require('./routes/wallet');  // ← À ajouter
+const walletRoutes = require('./routes/wallet');
+const posRoutes = require('./routes/pos');
 
 const app = express();
 
-// Middlewares globaux
-app.use(helmet());
-app.use(cors({ origin: process.env.CORS_ORIGIN || '*', credentials: true }));
-app.use(express.json({ limit: '10kb' }));
-app.use(express.urlencoded({ extended: true, limit: '10kb' }));
+// ============================================
+// ✅ 1. CORS EN PREMIER (AVANT TOUT)
+// ============================================
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Autoriser toutes les origines en développement
+        if (process.env.NODE_ENV === 'development' || !origin) {
+            return callback(null, true);
+        }
+        
+        const allowedOrigins = [
+            'http://localhost:3000',
+            'http://localhost:3001',
+            'http://frontend:3000',
+            'http://next-app:3000',
+            'http://backend:3000',
+            'http://localhost'
+        ];
+        
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Requested-With',
+        'Accept',
+        'Origin',
+        'x-tenant-id',
+        'x-tenant'
+    ],
+    exposedHeaders: ['Authorization'],
+    credentials: true,
+    optionsSuccessStatus: 200,
+    preflightContinue: false,
+};
 
-// ⚠️ CRITICAL: tenantResolver DOIT être AVANT toutes les routes
+// ✅ Appliquer CORS
+app.use(cors(corsOptions));
+
+// ✅ Gérer les requêtes OPTIONS (preflight)
+app.options('*', cors(corsOptions));
+
+// ✅ Middleware CORS manuel pour les cas où cors ne fonctionne pas
+app.use((req, res, next) => {
+    const origin = req.headers.origin || '*';
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-tenant-id, x-tenant');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Max-Age', '86400'); // Cache preflight 24h
+    
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
+
+// ============================================
+// 2. Autres middlewares
+// ============================================
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// ============================================
+// 3. TenantResolver (après CORS)
+// ============================================
+// ⚠️ tenantResolver DOIT être après CORS
 app.use(tenantResolver);
 
-// Routes publiques
+// ============================================
+// 4. Routes
+// ============================================
+
+// Route de santé (publique)
 app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
@@ -43,15 +116,17 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/tenant', tenantRoutes);
 
-// Routes protégées (nécessitent authentification)
+// Routes protégées
 app.use('/api/products', authenticateUser, productRoutes);
 app.use('/api/users', authenticateUser, userRoutes);
 app.use('/api/dashboard', authenticateUser, dashboardRoutes);
 app.use('/api/admin', authenticateUser, adminRoutes);
 app.use('/api/upload', authenticateUser, uploadRoutes);
-app.use('/api/wallet', authenticateUser, walletRoutes);  // ← Ajouter avec authenticateUser
-app.use('/api/credit', authenticateUser, creditClientRoutes);  // ← Ajouter avec authenticateUser
-// Route protégée simple
+app.use('/api/wallet', authenticateUser, walletRoutes);
+app.use('/api/credit', authenticateUser, creditClientRoutes);
+app.use('/api/pos', authenticateUser, posRoutes);
+
+// Route me
 app.get('/api/me', authenticateUser, (req, res) => {
     res.json({
         status: 'success',
@@ -62,9 +137,16 @@ app.get('/api/me', authenticateUser, (req, res) => {
     });
 });
 
+// ============================================
+// 5. Gestion des erreurs
+// ============================================
+
 // 404
 app.all('*', (req, res) => {
-    res.status(404).json({ status: 'fail', message: `Route ${req.originalUrl} non trouvée` });
+    res.status(404).json({ 
+        status: 'fail', 
+        message: `Route ${req.originalUrl} non trouvée` 
+    });
 });
 
 // Gestion des erreurs
@@ -78,12 +160,11 @@ app.use((err, req, res, next) => {
     
     logger.error(`${err.statusCode || 500} - ${err.message}`);
     
-    // Set content-type explicitly
     res.setHeader('Content-Type', 'application/json');
     
     if (err.isOperational) {
-        return res.status(err.statusCode).json({ 
-            status: err.status, 
+        return res.status(err.statusCode || 500).json({ 
+            status: err.status || 'error', 
             message: err.message 
         });
     }
@@ -91,7 +172,7 @@ app.use((err, req, res, next) => {
     res.status(500).json({ 
         status: 'error', 
         message: 'Erreur interne du serveur',
-        details: err.message
+        details: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
 });
 

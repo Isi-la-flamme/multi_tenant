@@ -1,3 +1,4 @@
+// src/middleware/auth.js
 const { verifyToken } = require('../config/jwt');
 const userService = require('../services/user-service');
 const tenantService = require('../services/tenant-service');
@@ -74,4 +75,11 @@ async function optionalAuth(req, res, next) {
     next();
 }
 
-module.exports = { authenticateUser, optionalAuth };
+// ✅ Alias pour compatibilité
+const auth = authenticateUser;
+
+module.exports = { 
+    authenticateUser, 
+    optionalAuth,
+    auth  // ✅ Exporté pour compatibilité
+};

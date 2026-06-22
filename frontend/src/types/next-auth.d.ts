@@ -1,12 +1,10 @@
 // src/types/next-auth.d.ts
-import NextAuth, { DefaultSession } from 'next-auth';
-import { JWT } from 'next-auth/jwt';
+import { DefaultSession } from 'next-auth';
 
 declare module 'next-auth' {
   interface Session {
     accessToken?: string;
     refreshToken?: string;
-    tenants?: any[];
     user: {
       id: string;
       tenantId: string;
@@ -19,7 +17,6 @@ declare module 'next-auth' {
     role: string;
     accessToken: string;
     refreshToken: string;
-    tenants?: any[];
   }
 }
 
@@ -30,6 +27,5 @@ declare module 'next-auth/jwt' {
     tenantId?: string;
     role?: string;
     id?: string;
-    tenants?: any[];
   }
 }

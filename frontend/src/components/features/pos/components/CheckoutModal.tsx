@@ -24,7 +24,7 @@ import { POSCart, POSPayment } from '@/types/pos.types';
 interface CheckoutModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  cart: POSCart | null;  // ✅ Permettre null
+  cart: POSCart | null;
   onConfirm: (payment: POSPayment) => void;
   isLoading?: boolean;
 }
@@ -39,17 +39,19 @@ export function CheckoutModal({
   const [method, setMethod] = useState<'cash' | 'card' | 'credit'>('cash');
   const [cashReceived, setCashReceived] = useState(0);
 
-  // ✅ Vérifier que cart existe
-  if (!cart) {
+  // ✅ Vérifier que cart existe et a un total valide
+  if (!cart || typeof cart.total !== 'number' || cart.items.length === 0) {
     return null;
   }
+
+  const total = cart.total || 0;
 
   const handleConfirm = () => {
     const payment: POSPayment = {
       method,
-      amount: cart.total,
+      amount: total,
       cashAmount: method === 'cash' ? cashReceived : undefined,
-      change: method === 'cash' && cashReceived >= cart.total ? cashReceived - cart.total : 0,
+      change: method === 'cash' && cashReceived >= total ? cashReceived - total : 0,
     };
     onConfirm(payment);
   };
@@ -60,7 +62,7 @@ export function CheckoutModal({
         <DialogHeader>
           <DialogTitle>💳 Paiement</DialogTitle>
           <DialogDescription>
-            Total à payer : {cart.total.toFixed(2)} €
+            Total à payer : {total.toFixed(2)} €
           </DialogDescription>
         </DialogHeader>
 
@@ -92,12 +94,12 @@ export function CheckoutModal({
                 value={cashReceived}
                 onChange={(e) => setCashReceived(parseFloat(e.target.value) || 0)}
               />
-              {cashReceived >= cart.total && (
+              {cashReceived >= total && (
                 <p className="mt-1 text-sm text-green-600">
-                  Rendu : {(cashReceived - cart.total).toFixed(2)} €
+                  Rendu : {(cashReceived - total).toFixed(2)} €
                 </p>
               )}
-              {cashReceived > 0 && cashReceived < cart.total && (
+              {cashReceived > 0 && cashReceived < total && (
                 <p className="mt-1 text-sm text-red-600">
                   Montant insuffisant
                 </p>
@@ -124,7 +126,7 @@ export function CheckoutModal({
               onClick={handleConfirm}
               disabled={
                 isLoading ||
-                (method === 'cash' && cashReceived < cart.total)
+                (method === 'cash' && cashReceived < total)
               }
             >
               {isLoading ? 'Traitement...' : 'Confirmer le paiement'}

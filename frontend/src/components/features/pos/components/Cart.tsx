@@ -1,9 +1,8 @@
 // src/components/features/pos/components/Cart.tsx
 'use client';
 
-import { POSCart, POSCartItem } from '@/types/pos.types';
+import { POSCart } from '@/types/pos.types';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Trash2, Plus, Minus, ShoppingCart } from 'lucide-react';
 
 interface CartProps {
@@ -25,6 +24,7 @@ export function Cart({
 }: CartProps) {
   // Vérifier que le panier existe et a des items
   const hasItems = cart && cart.items && cart.items.length > 0;
+  const total = cart?.total || 0;
 
   if (!cart || !hasItems) {
     return (
@@ -103,7 +103,7 @@ export function Cart({
         </div>
         <div className="flex justify-between text-lg font-bold">
           <span>Total</span>
-          <span className="text-green-600">{cart.total.toFixed(2)} €</span>
+          <span className="text-green-600">{total.toFixed(2)} €</span>
         </div>
 
         <div className="flex gap-2 pt-4">

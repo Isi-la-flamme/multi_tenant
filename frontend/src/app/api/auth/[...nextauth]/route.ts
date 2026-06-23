@@ -12,17 +12,19 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         try {
-          const response = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL}/auth/login`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                email: credentials?.email,
-                password: credentials?.password,
-              }),
-            }
-          );
+          const AUTH_API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL;
+
+          const response = await fetch(`${AUTH_API_URL}/auth/login`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'x-tenant-subdomain': 'demo' 
+            },
+            body: JSON.stringify({
+              email: credentials?.email,
+              password: credentials?.password,
+            }),
+          });
 
           const data = await response.json();
 
@@ -30,7 +32,6 @@ export const authOptions: NextAuthOptions = {
             throw new Error(data.message || 'Login failed');
           }
 
-          // ✅ Gérer la structure de réponse
           const userData = data.status === 'success' ? data.data : data;
           const user = userData.user;
 

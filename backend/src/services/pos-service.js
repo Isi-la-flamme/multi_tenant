@@ -1,6 +1,6 @@
 // src/services/pos-service.js
 const { v4: uuidv4 } = require('uuid');
-const { pool } = require('../config/database');
+const { globalPool } = require('../config/database'); // ✅ Changer pool → globalPool
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const productService = require('./product-service');
@@ -10,40 +10,73 @@ class POSService {
    * Récupère les produits pour le POS
    */
   async getProducts(tenantId, search, category, limit = 100) {
-    let query = `
-      SELECT 
-        id, name, description, price, category, stock, 
-        image, barcode, created_at as "createdAt"
-      FROM products 
-      WHERE tenant_id = $1
-    `;
-    const params = [tenantId];
-    let paramIndex = 2;
+    try {
+      console.log('🔍 POS getProducts - tenantId:', tenantId);
+      
+      let query = `
+        SELECT 
+          id, 
+          name, 
+          description, 
+          price::float as price, 
+          category, 
+          COALESCE(stock, 0)::int as stock, 
+          image, 
+          barcode, 
+          created_at as "createdAt"
+        FROM products 
+        WHERE tenant_id = $1
+      `;
+      const params = [tenantId];
+      let paramIndex = 2;
 
-    if (search) {
-      query += ` AND (name ILIKE $${paramIndex} OR barcode = $${paramIndex})`;
-      params.push(`%${search}%`);
-      paramIndex++;
+      if (search) {
+        query += ` AND (name ILIKE $${paramIndex} OR barcode = $${paramIndex})`;
+        params.push(`%${search}%`);
+        paramIndex++;
+      }
+
+      if (category && category !== 'all') {
+        query += ` AND category = $${paramIndex}`;
+        params.push(category);
+        paramIndex++;
+      }
+
+      query += ` ORDER BY name LIMIT $${paramIndex}`;
+      params.push(limit);
+
+      console.log('📝 SQL Query:', query);
+      console.log('📦 Params:', params);
+
+      const result = await globalPool.query(query, params);
+      
+      // ✅ Convertir les types
+      const products = result.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        price: parseFloat(row.price) || 0,
+        category: row.category || 'Autre',
+        stock: parseInt(row.stock) || 0,
+        image: row.image,
+        barcode: row.barcode,
+        createdAt: row.createdAt,
+      }));
+      
+      console.log(`✅ ${products.length} produits trouvés`);
+      console.log('📦 Premier produit:', products[0]);
+      
+      return products;
+    } catch (error) {
+      console.error('❌ Erreur dans getProducts:', error);
+      throw error;
     }
-
-    if (category && category !== 'all') {
-      query += ` AND category = $${paramIndex}`;
-      params.push(category);
-      paramIndex++;
-    }
-
-    query += ` ORDER BY name LIMIT $${paramIndex}`;
-    params.push(limit);
-
-    const result = await pool.query(query, params);
-    return result.rows;
-  }
-
+}
   /**
    * Récupère un produit par son code-barres
    */
   async getProductByBarcode(tenantId, barcode) {
-    const result = await pool.query(
+    const result = await globalPool.query( // ✅ globalPool
       `SELECT 
         id, name, description, price, category, stock, 
         image, barcode, created_at as "createdAt"
@@ -65,11 +98,10 @@ class POSService {
       subtotal: 0,
       tax: 0,
       total: 0,
-      taxRate: 20, // TVA par défaut
+      taxRate: 20,
       createdAt: new Date(),
     };
 
-    // Stocker le panier en session/cache (Redis)
     await this.saveCart(tenantId, id, cart);
     return cart;
   }
@@ -80,7 +112,6 @@ class POSService {
   async getCart(tenantId, cartId) {
     const cart = await this.getCartFromCache(tenantId, cartId);
     if (!cart) {
-      // Si le panier n'existe pas en cache, en créer un nouveau
       return this.createCart(tenantId);
     }
     return cart;
@@ -90,33 +121,27 @@ class POSService {
    * Ajoute un produit au panier
    */
   async addToCart(tenantId, cartId, productId, quantity) {
-    // Récupérer le panier
     let cart = await this.getCartFromCache(tenantId, cartId);
     if (!cart) {
       cart = await this.createCart(tenantId);
       cartId = cart.id;
     }
 
-    // Récupérer le produit
     const product = await productService.getProductById(productId, tenantId);
     if (!product) {
       throw new AppError('Produit non trouvé', 404);
     }
 
-    // Vérifier le stock
     if (product.stock < quantity) {
       throw new AppError('Stock insuffisant', 400);
     }
 
-    // Vérifier si le produit est déjà dans le panier
     const existingItem = cart.items.find(item => item.productId === productId);
 
     if (existingItem) {
-      // Mettre à jour la quantité
       existingItem.quantity += quantity;
       existingItem.total = existingItem.quantity * existingItem.unitPrice;
     } else {
-      // Ajouter un nouvel article
       cart.items.push({
         id: uuidv4(),
         productId: product.id,
@@ -128,10 +153,7 @@ class POSService {
       });
     }
 
-    // Recalculer les totaux
     this.recalculateCart(cart);
-
-    // Sauvegarder le panier
     await this.saveCart(tenantId, cartId, cart);
 
     return cart;
@@ -155,7 +177,6 @@ class POSService {
       return this.removeFromCart(tenantId, cartId, itemId);
     }
 
-    // Vérifier le stock
     const product = await productService.getProductById(item.productId, tenantId);
     if (product && product.stock < quantity) {
       throw new AppError('Stock insuffisant', 400);
@@ -211,12 +232,10 @@ class POSService {
   async checkout(tenantId, userId, userName, data) {
     const { cart, payment, customerId, customerName } = data;
 
-    // Vérifier que le panier n'est pas vide
     if (!cart.items || cart.items.length === 0) {
       throw new AppError('Le panier est vide', 400);
     }
 
-    // Vérifier le stock de chaque produit
     for (const item of cart.items) {
       const product = await productService.getProductById(item.productId, tenantId);
       if (!product) {
@@ -227,15 +246,12 @@ class POSService {
       }
     }
 
-    // Déduire le stock
     for (const item of cart.items) {
       await productService.updateStock(item.productId, -item.quantity, tenantId);
     }
 
-    // Générer un numéro de facture
     const invoiceNumber = await this.generateInvoiceNumber(tenantId);
 
-    // Créer la vente
     const saleId = uuidv4();
     const now = new Date();
 
@@ -248,7 +264,7 @@ class POSService {
       RETURNING *
     `;
 
-    const result = await pool.query(query, [
+    const result = await globalPool.query(query, [ // ✅ globalPool
       saleId,
       tenantId,
       invoiceNumber,
@@ -262,10 +278,8 @@ class POSService {
       now,
     ]);
 
-    // Supprimer le panier du cache
     await this.deleteCart(tenantId, cart.id);
 
-    // Logger la vente
     logger.info(`Vente ${invoiceNumber} créée par ${userName}`, {
       tenantId,
       total: cart.total,
@@ -318,10 +332,9 @@ class POSService {
     query += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     params.push(limit, offset);
 
-    const result = await pool.query(query, params);
+    const result = await globalPool.query(query, params); // ✅ globalPool
 
-    // Compter le total
-    const countResult = await pool.query(
+    const countResult = await globalPool.query( // ✅ globalPool
       `SELECT COUNT(*) FROM pos_sales WHERE tenant_id = $1`,
       [tenantId]
     );
@@ -343,7 +356,7 @@ class POSService {
    * Récupère une vente
    */
   async getSale(tenantId, saleId) {
-    const result = await pool.query(
+    const result = await globalPool.query( // ✅ globalPool
       `SELECT 
         id, invoice_number as "invoiceNumber", 
         cart, payment, status, 
@@ -386,13 +399,11 @@ class POSService {
       throw new AppError('Cette vente est annulée', 400);
     }
 
-    // Remettre le stock
     for (const item of sale.cart.items) {
       await productService.updateStock(item.productId, item.quantity, tenantId);
     }
 
-    // Mettre à jour le statut
-    const result = await pool.query(
+    const result = await globalPool.query( // ✅ globalPool
       `UPDATE pos_sales 
        SET status = 'refunded', refund_reason = $1 
        WHERE tenant_id = $2 AND id = $3 
@@ -416,11 +427,10 @@ class POSService {
    * Récupère les statistiques du POS
    */
   async getStats(tenantId) {
-    // Ventes du jour
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const result = await pool.query(
+    const result = await globalPool.query( // ✅ globalPool
       `SELECT 
         COUNT(*) as "totalSales",
         COALESCE(SUM((cart->>'total')::numeric), 0) as "totalRevenue",
@@ -435,8 +445,7 @@ class POSService {
 
     const stats = result.rows[0];
 
-    // Dernière vente
-    const lastSaleResult = await pool.query(
+    const lastSaleResult = await globalPool.query( // ✅ globalPool
       `SELECT 
         id, invoice_number as "invoiceNumber", 
         cart, created_at as "createdAt"
@@ -471,21 +480,13 @@ class POSService {
   // Méthodes privées
   // ============================================
 
-  /**
-   * Recalcule les totaux du panier
-   */
   recalculateCart(cart) {
     cart.subtotal = cart.items.reduce((sum, item) => sum + item.total, 0);
     cart.tax = cart.subtotal * (cart.taxRate / 100);
     cart.total = cart.subtotal + cart.tax;
   }
 
-  /**
-   * Sauvegarde le panier en cache (Redis)
-   */
   async saveCart(tenantId, cartId, cart) {
-    // TODO: Implémenter avec Redis
-    // Pour le moment, on stocke en mémoire (à remplacer par Redis)
     if (!this.carts) {
       this.carts = {};
     }
@@ -494,11 +495,7 @@ class POSService {
     return cart;
   }
 
-  /**
-   * Récupère le panier du cache (Redis)
-   */
   async getCartFromCache(tenantId, cartId) {
-    // TODO: Implémenter avec Redis
     if (!this.carts) {
       this.carts = {};
     }
@@ -506,9 +503,6 @@ class POSService {
     return this.carts[key] || null;
   }
 
-  /**
-   * Supprime le panier du cache
-   */
   async deleteCart(tenantId, cartId) {
     if (!this.carts) {
       this.carts = {};
@@ -517,20 +511,16 @@ class POSService {
     delete this.carts[key];
   }
 
-  /**
-   * Génère un numéro de facture
-   */
   async generateInvoiceNumber(tenantId) {
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
 
-    // Compter les ventes du jour
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    const result = await pool.query(
+    const result = await globalPool.query( // ✅ globalPool
       `SELECT COUNT(*) FROM pos_sales 
        WHERE tenant_id = $1 AND created_at >= $2`,
       [tenantId, today]

@@ -27,7 +27,7 @@ const app = express();
 // ============================================
 const corsOptions = {
     origin: function (origin, callback) {
-        // Autoriser toutes les origines en développement
+        // Autoriser toutes les origines en développement ou les appels sans origine (ex: Postman)
         if (process.env.NODE_ENV === 'development' || !origin) {
             return callback(null, true);
         }
@@ -35,10 +35,8 @@ const corsOptions = {
         const allowedOrigins = [
             'http://localhost:3000',
             'http://localhost:3001',
-            'http://frontend:3000',
-            'http://next-app:3000',
-            'http://backend:3000',
-            'http://localhost'
+            'http://frontend:3000'
+       
         ];
         
         if (allowedOrigins.includes(origin)) {
@@ -55,34 +53,19 @@ const corsOptions = {
         'Accept',
         'Origin',
         'x-tenant-id',
-        'x-tenant'
+        'x-tenant',
+        'x-tenant-subdomain' // ✅ AJOUTEZ CETTE LIGNE
     ],
     exposedHeaders: ['Authorization'],
     credentials: true,
-    optionsSuccessStatus: 200,
-    preflightContinue: false,
+    optionsSuccessStatus: 200, // Pour la compatibilité avec les anciens navigateurs (SmartTVs, etc.)
 };
 
-// ✅ Appliquer CORS
+// ✅ Appliquer CORS globalement
 app.use(cors(corsOptions));
 
-// ✅ Gérer les requêtes OPTIONS (preflight)
+// ✅ (Optionnel mais recommandé) Gérer explicitement les requêtes preflight OPTIONS sur toutes les routes
 app.options('*', cors(corsOptions));
-
-// ✅ Middleware CORS manuel pour les cas où cors ne fonctionne pas
-app.use((req, res, next) => {
-    const origin = req.headers.origin || '*';
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-tenant-id, x-tenant');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Max-Age', '86400'); // Cache preflight 24h
-    
-    if (req.method === 'OPTIONS') {
-        return res.sendStatus(200);
-    }
-    next();
-});
 
 // ============================================
 // 2. Autres middlewares

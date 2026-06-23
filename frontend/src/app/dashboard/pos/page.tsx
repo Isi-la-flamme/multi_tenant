@@ -9,8 +9,7 @@ import { ProductGrid } from '@/components/features/pos/components/ProductGrid';
 import { Cart } from '@/components/features/pos/components/Cart';
 import { CheckoutModal } from '@/components/features/pos/components/CheckoutModal';
 import { POSStatsComponent } from '@/components/features/pos/components/POSStats';
-import { Card } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { POSCart } from '@/types/pos.types';
 
 export default function POSPage() {
   const { data: session, status } = useSession();
@@ -81,7 +80,9 @@ export default function POSPage() {
   };
 
   const handleCheckout = (payment: any) => {
-    if (!cart) return;
+    if (!cart || !cart.items || cart.items.length === 0) {
+      return;
+    }
     checkout.mutate({
       cart,
       payment,
@@ -96,6 +97,13 @@ export default function POSPage() {
         });
       },
     });
+  };
+
+  const handleOpenCheckout = () => {
+    // ✅ Vérifier que le panier existe et a des items
+    if (cart && cart.items && cart.items.length > 0 && cart.total > 0) {
+      setIsCheckoutOpen(true);
+    }
   };
 
   // Vérification de l'authentification
@@ -126,15 +134,11 @@ export default function POSPage() {
         {/* Panier */}
         <div className="border rounded-lg overflow-hidden">
           <Cart
-            cart={cart!}
+            cart={cart || null}
             onUpdateQuantity={handleUpdateQuantity}
             onRemoveItem={handleRemoveItem}
             onClear={handleClearCart}
-            onCheckout={() => {
-              if (cart && cart.items.length > 0) {
-                setIsCheckoutOpen(true);
-              }
-            }}
+            onCheckout={handleOpenCheckout}
             isLoading={checkout.isPending}
           />
         </div>

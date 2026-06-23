@@ -15,13 +15,21 @@ router.get('/', async (req, res, next) => {
         const filters = {
             isActive: req.query.active === 'true' ? true : 
                      req.query.active === 'false' ? false : null,
+            search: req.query.search,
+            category: req.query.category,
+            minPrice: req.query.minPrice ? parseFloat(req.query.minPrice) : undefined,
+            maxPrice: req.query.maxPrice ? parseFloat(req.query.maxPrice) : undefined,
+            inStock: req.query.inStock === 'true' ? true :
+                     req.query.inStock === 'false' ? false : null,
             limit: parseInt(req.query.limit) || 50,
-            offset: parseInt(req.query.offset) || 0
+            offset: req.query.offset !== undefined
+                ? parseInt(req.query.offset)
+                : ((parseInt(req.query.page) || 1) - 1) * (parseInt(req.query.limit) || 50)
         };
         
         const [products, total] = await Promise.all([
             productService.findAll(req.tenant.id, filters),
-            productService.count(req.tenant.id, filters.isActive)
+            productService.count(req.tenant.id, filters)
         ]);
         
         res.json({
@@ -46,6 +54,21 @@ router.get('/:id', async (req, res, next) => {
         const product = await productService.findById(req.params.id, req.tenant.id);
         res.json({
             status: 'success',
+            data: { product }
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// PATCH /api/products/:id/stock - Ajuster le stock
+router.patch('/:id/stock', async (req, res, next) => {
+    try {
+        const { quantity } = req.body;
+        const product = await productService.updateStock(req.params.id, quantity, req.tenant.id);
+        res.json({
+            status: 'success',
+            message: 'Stock mis a jour',
             data: { product }
         });
     } catch (error) {

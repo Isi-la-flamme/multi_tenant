@@ -180,6 +180,10 @@ async function migrateAllTenants() {
     console.log('\n📦 Création des index...');
     
     await globalPool.query(`CREATE INDEX IF NOT EXISTS idx_products_tenant_id ON products(tenant_id)`);
+    await globalPool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS category VARCHAR(100)`);
+    await globalPool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS stock INTEGER DEFAULT 0`);
+    await globalPool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS image VARCHAR(500)`);
+    await globalPool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode VARCHAR(100)`);
     await globalPool.query(`CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)`);
     await globalPool.query(`CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)`);
     
@@ -192,7 +196,7 @@ async function migrateAllTenants() {
     await globalPool.query(`CREATE INDEX IF NOT EXISTS idx_pos_sales_created_at ON pos_sales(created_at)`);
     await globalPool.query(`CREATE INDEX IF NOT EXISTS idx_pos_sales_status ON pos_sales(status)`);
     
-    await globalPool.query(`CREATE INDEX IF NOT EXISTS idx_users_tenant_id ON users(tenant_id)`);
+    // await globalPool.query(`CREATE INDEX IF NOT EXISTS idx_users_tenant_id ON users(tenant_id)`);
     await globalPool.query(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`);
 
     console.log('✅ Index créés');

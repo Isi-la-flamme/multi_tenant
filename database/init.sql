@@ -76,6 +76,10 @@ CREATE TABLE IF NOT EXISTS products (
     description TEXT,
     price DECIMAL(10,2) DEFAULT 0,
     sku VARCHAR(100),
+    category VARCHAR(100),
+    stock INTEGER DEFAULT 0,
+    image VARCHAR(500),
+    barcode VARCHAR(100),
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -151,6 +155,8 @@ CREATE INDEX IF NOT EXISTS idx_profiles_is_active ON profiles(is_active);
 CREATE INDEX IF NOT EXISTS idx_products_tenant_id ON products(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
 CREATE INDEX IF NOT EXISTS idx_products_is_active ON products(is_active);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 
 -- Index pour files
 CREATE INDEX IF NOT EXISTS idx_files_tenant_id ON files(tenant_id);
